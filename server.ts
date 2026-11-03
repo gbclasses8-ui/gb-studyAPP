@@ -14,6 +14,14 @@ if (!fs.existsSync(path.resolve(__dirname, 'data'))) {
   fs.mkdirSync(path.resolve(__dirname, 'data'), { recursive: true });
 }
 
+const BLACKLIST_DELETED_PLATFORM_IDS = [
+  'plat-1793674074703', // PW Test
+  'plat-1793684455809', // PW Test 2
+  'plat-1793684865029', // GB Live Study
+];
+
+const BLACKLIST_PLATFORM_NAMES = ['GB LIVE STUDY', 'PW TEST 2', 'PW TEST'];
+
 // In-memory persistent database cache (Authoritative in-memory state)
 let activeDb: {
   platforms: any[];
@@ -23,7 +31,7 @@ let activeDb: {
 } = {
   platforms: [],
   banners: [],
-  deletedPlatformIds: [],
+  deletedPlatformIds: [...BLACKLIST_DELETED_PLATFORM_IDS],
   deletedBannerIds: [],
 };
 
@@ -46,11 +54,16 @@ function readDb() {
       (activeDb.banners || []).forEach((b: any) => mergedBannersMap.set(b.id, b));
       banners.forEach((b: any) => mergedBannersMap.set(b.id, b));
 
-      const allDeletedPlatforms = Array.from(new Set([...(activeDb.deletedPlatformIds || []), ...deletedPlatformIds]));
+      const allDeletedPlatforms = Array.from(new Set([...(activeDb.deletedPlatformIds || []), ...deletedPlatformIds, ...BLACKLIST_DELETED_PLATFORM_IDS]));
       const allDeletedBanners = Array.from(new Set([...(activeDb.deletedBannerIds || []), ...deletedBannerIds]));
 
       // Filter out deleted
-      const finalPlatforms = Array.from(mergedPlatformsMap.values()).filter((p: any) => !allDeletedPlatforms.includes(p.id));
+      const finalPlatforms = Array.from(mergedPlatformsMap.values()).filter((p: any) => {
+        if (allDeletedPlatforms.includes(p.id)) return false;
+        const normalizedName = (p.name || '').trim().toUpperCase();
+        if (BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) return false;
+        return true;
+      });
       const finalBanners = Array.from(mergedBannersMap.values()).filter((b: any) => !allDeletedBanners.includes(b.id));
 
       activeDb = {
@@ -118,12 +131,14 @@ async function startServer() {
     if (Array.isArray(incomingPlatforms)) {
       const map = new Map<string, any>();
       (activeDb.platforms || []).forEach((p: any) => {
-        if (!activeDb.deletedPlatformIds.includes(p.id)) {
+        const normalizedName = (p.name || '').trim().toUpperCase();
+        if (!activeDb.deletedPlatformIds.includes(p.id) && !BLACKLIST_DELETED_PLATFORM_IDS.includes(p.id) && !BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) {
           map.set(p.id, p);
         }
       });
       incomingPlatforms.forEach((p: any) => {
-        if (!activeDb.deletedPlatformIds.includes(p.id)) {
+        const normalizedName = (p.name || '').trim().toUpperCase();
+        if (!activeDb.deletedPlatformIds.includes(p.id) && !BLACKLIST_DELETED_PLATFORM_IDS.includes(p.id) && !BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) {
           map.set(p.id, p);
         }
       });

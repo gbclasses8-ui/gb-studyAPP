@@ -9,20 +9,36 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const DB_FILE = path.resolve(process.cwd(), 'data', 'database.json');
 
+const BLACKLIST_DELETED_PLATFORM_IDS = [
+  'plat-1793674074703', // PW Test
+  'plat-1793684455809', // PW Test 2
+  'plat-1793684865029', // GB Live Study
+];
+
+const BLACKLIST_PLATFORM_NAMES = ['GB LIVE STUDY', 'PW TEST 2', 'PW TEST'];
+
 function readDb() {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, 'utf-8');
       const parsed = JSON.parse(data);
+      const rawPlatforms = Array.isArray(parsed.platforms) ? parsed.platforms : [];
+      const platforms = rawPlatforms.filter((p: any) => {
+        if (BLACKLIST_DELETED_PLATFORM_IDS.includes(p.id)) return false;
+        const normalizedName = (p.name || '').trim().toUpperCase();
+        if (BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) return false;
+        return true;
+      });
       return {
-        platforms: Array.isArray(parsed.platforms) ? parsed.platforms : [],
+        platforms,
         banners: Array.isArray(parsed.banners) ? parsed.banners : [],
+        deletedPlatformIds: Array.isArray(parsed.deletedPlatformIds) ? parsed.deletedPlatformIds : [],
       };
     }
   } catch (e) {
     // ignore
   }
-  return { platforms: [], banners: [] };
+  return { platforms: [], banners: [], deletedPlatformIds: [] };
 }
 
 function writeDb(data: any) {
@@ -42,7 +58,7 @@ let memoryDb: {
 } = {
   platforms: [],
   banners: [],
-  deletedPlatformIds: [],
+  deletedPlatformIds: [...BLACKLIST_DELETED_PLATFORM_IDS],
   deletedBannerIds: [],
 };
 
@@ -50,6 +66,7 @@ try {
   const loaded = readDb();
   memoryDb.platforms = loaded.platforms || [];
   memoryDb.banners = loaded.banners || [];
+  memoryDb.deletedPlatformIds = Array.from(new Set([...memoryDb.deletedPlatformIds, ...(loaded.deletedPlatformIds || [])]));
 } catch (e) {}
 
 app.post('/api/admin/verify', (req: Request, res: Response) => {
@@ -73,18 +90,20 @@ app.get('/api/platforms', (_req: Request, res: Response) => {
 app.post('/api/platforms/sync', (req: Request, res: Response) => {
   const { platforms: incomingPlatforms, deletedIds } = req.body;
   if (Array.isArray(deletedIds)) {
-    memoryDb.deletedPlatformIds = Array.from(new Set([...memoryDb.deletedPlatformIds, ...deletedIds]));
+    memoryDb.deletedPlatformIds = Array.from(new Set([...memoryDb.deletedPlatformIds, ...deletedIds, ...BLACKLIST_DELETED_PLATFORM_IDS]));
   }
 
   if (Array.isArray(incomingPlatforms)) {
     const map = new Map<string, any>();
     (memoryDb.platforms || []).forEach((p: any) => {
-      if (!memoryDb.deletedPlatformIds.includes(p.id)) {
+      const normalizedName = (p.name || '').trim().toUpperCase();
+      if (!memoryDb.deletedPlatformIds.includes(p.id) && !BLACKLIST_DELETED_PLATFORM_IDS.includes(p.id) && !BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) {
         map.set(p.id, p);
       }
     });
     incomingPlatforms.forEach((p: any) => {
-      if (!memoryDb.deletedPlatformIds.includes(p.id)) {
+      const normalizedName = (p.name || '').trim().toUpperCase();
+      if (!memoryDb.deletedPlatformIds.includes(p.id) && !BLACKLIST_DELETED_PLATFORM_IDS.includes(p.id) && !BLACKLIST_PLATFORM_NAMES.includes(normalizedName)) {
         map.set(p.id, p);
       }
     });

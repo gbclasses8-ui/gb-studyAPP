@@ -14,6 +14,16 @@ import { BottomNav, NavTab } from './components/BottomNav';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { LoadingPlatformModal } from './components/LoadingPlatformModal';
+import { PLATFORMS_DATA, BANNERS_DATA, DELETED_PLATFORM_IDS } from './data/platformsData';
+
+const BLACKLISTED_PLATFORM_NAMES = ['GB LIVE STUDY', 'PW TEST 2', 'PW TEST'];
+
+function isBlacklistedPlatform(p: { id?: string; name?: string }): boolean {
+  if (!p) return false;
+  if (p.id && DELETED_PLATFORM_IDS.includes(p.id)) return true;
+  const normalized = (p.name || '').trim().toUpperCase();
+  return BLACKLISTED_PLATFORM_NAMES.includes(normalized);
+}
 
 // Safe localStorage wrappers to prevent any quota crash
 function safeSetItem(key: string, value: string) {
@@ -39,10 +49,13 @@ export default function App() {
       const saved = safeGetItem('gb_study_platforms');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((p: Platform) => !isBlacklistedPlatform(p));
+          if (cleaned.length > 0) return cleaned;
+        }
       }
     } catch (e) {}
-    return [];
+    return PLATFORMS_DATA;
   });
 
   const [banners, setBanners] = useState<BannerSlide[]>(() => {
@@ -53,7 +66,7 @@ export default function App() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch (e) {}
-    return [];
+    return BANNERS_DATA;
   });
 
   // Keep ref to always have latest state during async sync
@@ -106,11 +119,17 @@ export default function App() {
 
   // Helper for deleted IDs tracking
   const getDeletedPlatformIds = (): Set<string> => {
+    const set = new Set<string>(DELETED_PLATFORM_IDS);
     try {
       const saved = safeGetItem('gb_deleted_platform_ids');
-      if (saved) return new Set(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((id: string) => set.add(id));
+        }
+      }
     } catch (e) {}
-    return new Set<string>();
+    return set;
   };
 
   const getDeletedBannerIds = (): Set<string> => {
@@ -140,14 +159,14 @@ export default function App() {
 
           // 1. Preserve current local platforms unless explicitly deleted
           (platformsRef.current || []).forEach((p) => {
-            if (!deletedPlatformIds.has(p.id)) {
+            if (!deletedPlatformIds.has(p.id) && !isBlacklistedPlatform(p)) {
               map.set(p.id, p);
             }
           });
 
           // 2. Merge server platforms unless explicitly deleted
           platData.forEach((sp: Platform) => {
-            if (!deletedPlatformIds.has(sp.id)) {
+            if (!deletedPlatformIds.has(sp.id) && !isBlacklistedPlatform(sp)) {
               const existing = map.get(sp.id);
               map.set(sp.id, existing ? { ...existing, ...sp } : sp);
             }
@@ -206,6 +225,18 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Purge any blacklisted platforms from localStorage if present
+    try {
+      const saved = safeGetItem('gb_study_platforms');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter((p: Platform) => !isBlacklistedPlatform(p));
+          safeSetItem('gb_study_platforms', JSON.stringify(cleaned));
+        }
+      }
+    } catch (e) {}
+
     refreshBackendData();
     // Non-destructive auto sync every 10 seconds
     const syncInterval = setInterval(refreshBackendData, 10000);
