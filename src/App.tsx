@@ -152,7 +152,7 @@ export default function App() {
 
   const lastSyncedVersionRef = useRef<number>(0);
 
-  // Apply sync data idempotently to state & local cache
+  // Apply sync data idempotently to state & local cache with Smart Union Merge
   const applySyncData = (syncData: any) => {
     if (!syncData) return;
 
@@ -163,31 +163,65 @@ export default function App() {
       lastSyncedVersionRef.current = syncData.version;
     }
 
+    const localDeleted = getDeletedPlatformIds();
     const serverDeletedIds = new Set<string>([
       ...DELETED_PLATFORM_IDS,
       ...(Array.isArray(syncData.deletedPlatformIds) ? syncData.deletedPlatformIds : []),
+      ...localDeleted,
     ]);
 
     if (Array.isArray(syncData.platforms)) {
-      const validPlatforms = syncData.platforms
-        .filter((p: Platform) => p && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p))
-        .sort((a: Platform, b: Platform) => (a.order ?? 999) - (b.order ?? 999));
+      setPlatforms((prevPlatforms) => {
+        const map = new Map<string, Platform>();
 
-      setPlatforms(validPlatforms);
-      safeSetItem('gb_study_platforms', JSON.stringify(validPlatforms));
-      safeSetItem('gb_deleted_platform_ids', JSON.stringify(Array.from(serverDeletedIds)));
+        // 1. Keep all existing platforms that are NOT deleted or blacklisted
+        prevPlatforms.forEach((p) => {
+          if (p && p.id && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p)) {
+            map.set(p.id, p);
+          }
+        });
+
+        // 2. Add or update incoming server platforms
+        syncData.platforms.forEach((p: Platform) => {
+          if (p && p.id && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p)) {
+            map.set(p.id, p);
+          }
+        });
+
+        const merged = Array.from(map.values()).sort(
+          (a, b) => (a.order ?? 999) - (b.order ?? 999)
+        );
+
+        safeSetItem('gb_study_platforms', JSON.stringify(merged));
+        safeSetItem('gb_deleted_platform_ids', JSON.stringify(Array.from(serverDeletedIds)));
+        return merged;
+      });
     }
 
     if (Array.isArray(syncData.banners)) {
-      const serverDeletedBanners = new Set<string>(
-        Array.isArray(syncData.deletedBannerIds) ? syncData.deletedBannerIds : []
-      );
-      const validBanners = syncData.banners.filter(
-        (b: BannerSlide) => b && !serverDeletedBanners.has(b.id)
-      );
-      setBanners(validBanners);
-      safeSetItem('gb_study_banners', JSON.stringify(validBanners));
-      safeSetItem('gb_deleted_banner_ids', JSON.stringify(Array.from(serverDeletedBanners)));
+      const localDeletedBanners = getDeletedBannerIds();
+      const serverDeletedBanners = new Set<string>([
+        ...(Array.isArray(syncData.deletedBannerIds) ? syncData.deletedBannerIds : []),
+        ...localDeletedBanners,
+      ]);
+
+      setBanners((prevBanners) => {
+        const map = new Map<string, BannerSlide>();
+        prevBanners.forEach((b) => {
+          if (b && b.id && !serverDeletedBanners.has(b.id)) {
+            map.set(b.id, b);
+          }
+        });
+        syncData.banners.forEach((b: BannerSlide) => {
+          if (b && b.id && !serverDeletedBanners.has(b.id)) {
+            map.set(b.id, b);
+          }
+        });
+        const merged = Array.from(map.values());
+        safeSetItem('gb_study_banners', JSON.stringify(merged));
+        safeSetItem('gb_deleted_banner_ids', JSON.stringify(Array.from(serverDeletedBanners)));
+        return merged;
+      });
     }
   };
 
@@ -214,7 +248,12 @@ export default function App() {
         fetch('/api/platforms/deleted').catch(() => null),
       ]);
 
-      const serverDeletedIds = new Set<string>(DELETED_PLATFORM_IDS);
+      const localDeleted = getDeletedPlatformIds();
+      const serverDeletedIds = new Set<string>([
+        ...DELETED_PLATFORM_IDS,
+        ...localDeleted,
+      ]);
+
       if (delRes && delRes.ok) {
         const delData = await delRes.json().catch(() => null);
         if (Array.isArray(delData)) {
@@ -226,20 +265,38 @@ export default function App() {
       if (platRes && platRes.ok) {
         const platData = await platRes.json().catch(() => null);
         if (Array.isArray(platData)) {
-          const validPlatforms = platData
-            .filter((p: Platform) => p && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p))
-            .sort((a: Platform, b: Platform) => (a.order ?? 999) - (b.order ?? 999));
-
-          setPlatforms(validPlatforms);
-          safeSetItem('gb_study_platforms', JSON.stringify(validPlatforms));
+          setPlatforms((prevPlatforms) => {
+            const map = new Map<string, Platform>();
+            prevPlatforms.forEach((p) => {
+              if (p && p.id && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p)) {
+                map.set(p.id, p);
+              }
+            });
+            platData.forEach((p: Platform) => {
+              if (p && p.id && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p)) {
+                map.set(p.id, p);
+              }
+            });
+            const merged = Array.from(map.values()).sort(
+              (a, b) => (a.order ?? 999) - (b.order ?? 999)
+            );
+            safeSetItem('gb_study_platforms', JSON.stringify(merged));
+            return merged;
+          });
         }
       }
 
       if (banRes && banRes.ok) {
         const banData = await banRes.json().catch(() => null);
         if (Array.isArray(banData)) {
-          setBanners(banData);
-          safeSetItem('gb_study_banners', JSON.stringify(banData));
+          setBanners((prevBanners) => {
+            const map = new Map<string, BannerSlide>();
+            prevBanners.forEach((b) => map.set(b.id, b));
+            banData.forEach((b: BannerSlide) => map.set(b.id, b));
+            const merged = Array.from(map.values());
+            safeSetItem('gb_study_banners', JSON.stringify(merged));
+            return merged;
+          });
         }
       }
     } catch (err) {

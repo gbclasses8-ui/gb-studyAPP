@@ -189,58 +189,160 @@ export const BANNERS_DATA: BannerSlide[] = [
   }
 ];
 
+
 export const BATCHES_DATA: Batch[] = [
   {
-    id: 'yakeen-2027',
-    platformId: 'pw',
-    name: 'Yakeen 2027',
-    badge: 'New',
-    bannerImage: '/batches/yakeen_banner.jpg',
-    targetExam: 'For NEET Aspirants',
-    startDate: '15 Apr 2026',
-    endDate: '01 Jul 2027',
-    originalPrice: 3800,
-    discountedPrice: 'FREE',
-    freeBadgeText: '100% Free For Students',
-    category: 'NEET',
+    id: "batch-1",
+    platformId: "pw",
+    name: "Yakeen NEET 2026",
+    badge: "Most Popular",
+    bannerImage: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=60",
+    targetExam: "NEET 2026 Droppers",
+    startDate: "15 May 2025",
+    endDate: "30 April 2026",
+    originalPrice: 4999,
+    discountedPrice: "FREE",
+    freeBadgeText: "100% FREE",
+    category: "NEET",
     subjects: [
       {
-        id: 'phy',
-        name: 'Physics',
+        id: "phy-1",
+        name: "Physics",
         chapters: [
           {
-            id: 'phy-1',
-            title: 'Units and Measurements',
+            id: "ch-1",
+            title: "Units & Dimensions",
+            lecturesCount: 4,
+            dppCount: 4,
+            notesCount: 4,
+            lectures: [
+              { id: "lec-1", title: "Introduction & Dimensional Analysis", duration: "1h 12m", teacherName: "Alakh Sir" },
+              { id: "lec-2", title: "Error Analysis & Significant Figures", duration: "1h 05m", teacherName: "Rajwant Sir" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "chem-1",
+        name: "Chemistry",
+        chapters: [
+          {
+            id: "ch-chem-1",
+            title: "Some Basic Concepts of Chemistry",
+            lecturesCount: 5,
+            dppCount: 5,
+            notesCount: 5,
+            lectures: [
+              { id: "lec-c1", title: "Mole Concept & Stoichiometry", duration: "1h 20m", teacherName: "Pankaj Sir" }
+            ]
+          }
+        ]
+      },
+      {
+        id: "bio-1",
+        name: "Biology",
+        chapters: [
+          {
+            id: "ch-bio-1",
+            title: "Living World & Biological Classification",
             lecturesCount: 6,
             dppCount: 6,
             notesCount: 6,
             lectures: [
-              { id: 'l1', title: '01 : Fundamental & Derived Units', duration: '1h 14m', teacherName: 'MR Sir' },
-              { id: 'l2', title: '02 : Dimensional Analysis & Applications', duration: '1h 22m', teacherName: 'MR Sir' },
-              { id: 'l3', title: '03 : Significant Figures & Vernier Calipers', duration: '1h 05m', teacherName: 'MR Sir' },
+              { id: "lec-b1", title: "Taxonomy and Systematics", duration: "1h 15m", teacherName: "Tarun Sir" }
             ]
           }
         ]
       }
     ]
+  },
+  {
+    id: "batch-2",
+    platformId: "pw",
+    name: "Prayas JEE 2026",
+    badge: "Trending",
+    bannerImage: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800&auto=format&fit=crop&q=60",
+    targetExam: "JEE Main & Advanced 2026",
+    startDate: "20 May 2025",
+    endDate: "31 March 2026",
+    originalPrice: 5999,
+    discountedPrice: "FREE",
+    freeBadgeText: "100% FREE",
+    category: "JEE",
+    subjects: [
+      {
+        id: "jee-m1",
+        name: "Mathematics",
+        chapters: [
+          {
+            id: "ch-m1",
+            title: "Quadratic Equations",
+            lecturesCount: 5,
+            dppCount: 5,
+            notesCount: 5,
+            lectures: [
+              { id: "lec-m1", title: "Roots and Nature of Roots", duration: "1h 30m", teacherName: "Sachin Sir" }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    id: "batch-3",
+    platformId: "pw",
+    name: "Arjuna NEET Class 11",
+    badge: "Foundation",
+    bannerImage: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&auto=format&fit=crop&q=60",
+    targetExam: "Class 11 + NEET 2027",
+    startDate: "01 June 2025",
+    endDate: "28 Feb 2026",
+    originalPrice: 4499,
+    discountedPrice: "FREE",
+    freeBadgeText: "100% FREE",
+    category: "Class 11",
+    subjects: []
+  },
+  {
+    id: "batch-4",
+    platformId: "pw",
+    name: "Lakshya JEE Class 12",
+    badge: "Target 2026",
+    bannerImage: "https://images.unsplash.com/photo-1509228468518-180dd4864904?w=800&auto=format&fit=crop&q=60",
+    targetExam: "Class 12 Board + JEE",
+    startDate: "10 April 2025",
+    endDate: "31 Jan 2026",
+    originalPrice: 4999,
+    discountedPrice: "FREE",
+    freeBadgeText: "100% FREE",
+    category: "Class 12",
+    subjects: []
   }
 ];
 
 export const UPCOMING_EVENTS = [
   {
-    id: 'up-1',
-    title: 'NEET 2027 All India Grand Mock Test 1',
-    date: '10 Nov 2026 • 02:00 PM',
-    platform: 'GB STUDY',
-    tag: 'Live Test',
-    enrolled: '14,280 Students',
+    id: "event-1",
+    tag: "LIVE TEST",
+    platform: "PW All India",
+    title: "All India Mega Mock Test : NEET 2026 Pattern",
+    date: "Starts in 2 Days • 02:00 PM",
+    enrolled: "38,420 Enrolled"
   },
   {
-    id: 'up-2',
-    title: 'Organic Chemistry Roadmap & Reactions Session',
-    date: '14 Nov 2026 • 06:00 PM',
-    platform: 'GB STUDY LIVE',
-    tag: 'Webinar',
-    enrolled: '8,920 Students',
+    id: "event-2",
+    tag: "WEBINAR",
+    platform: "GB Study Hub",
+    title: "Last 6 Months Strategy Session with AIR-1 Faculty",
+    date: "Sunday • 07:00 PM",
+    enrolled: "14,890 Registered"
+  },
+  {
+    id: "event-3",
+    tag: "TEST SERIES",
+    platform: "JEE Rankers",
+    title: "JEE Advanced 2026 Full Syllabus Part Test - 1",
+    date: "Next Week • 09:00 AM",
+    enrolled: "22,100 Enrolled"
   }
 ];

@@ -128,8 +128,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         return;
       }
       try {
-        const maxWidth = type === 'banner' ? 960 : 400;
-        const maxHeight = type === 'banner' ? 540 : 400;
+        const maxWidth = type === 'banner' ? 960 : 160;
+        const maxHeight = type === 'banner' ? 540 : 160;
         const compressed = await compressImage(file, maxWidth, maxHeight);
         setter(compressed);
         showToast('Photo optimized & uploaded! ✓');
@@ -185,6 +185,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         showToast(`Platform "${platformName}" position #${targetOrder} par jud gaya! ✓`);
       }
 
+      // 3. Multi-instance / Vercel cold-start backup sync
+      const updatedPlatformsList = [...platforms.filter((p) => p.id !== payload.id), payload];
+      await fetch('/api/platforms/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platforms: updatedPlatformsList }),
+      }).catch(() => null);
+
       resetPlatformForm();
       await onRefreshData();
     } catch (err) {
@@ -212,7 +220,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     try {
       setConfirmDeletePlatformId(null);
       onDeletePlatformDirect(id);
+
+      // 1. Call DELETE endpoint
       await fetch(`/api/platforms/${id}`, { method: 'DELETE' }).catch(() => null);
+
+      // 2. Call bulk sync with deletedIds tombstone so all lambda instances stay updated
+      await fetch('/api/platforms/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          platforms: platforms.filter((p) => p.id !== id),
+          deletedIds: [id],
+        }),
+      }).catch(() => null);
+
       showToast(`Platform "${name}" delete ho gaya! ✓`);
       await onRefreshData();
     } catch (err) {
