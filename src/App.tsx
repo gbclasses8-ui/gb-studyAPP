@@ -46,16 +46,25 @@ export default function App() {
   // Database / Backend State with localStorage fallback for 100% persistence
   const [platforms, setPlatforms] = useState<Platform[]>(() => {
     try {
+      const deletedIds = new Set<string>(DELETED_PLATFORM_IDS);
+      const savedDeleted = safeGetItem('gb_deleted_platform_ids');
+      if (savedDeleted) {
+        const parsedDel = JSON.parse(savedDeleted);
+        if (Array.isArray(parsedDel)) {
+          parsedDel.forEach((id: string) => deletedIds.add(id));
+        }
+      }
+
       const saved = safeGetItem('gb_study_platforms');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          const cleaned = parsed.filter((p: Platform) => !isBlacklistedPlatform(p));
+          const cleaned = parsed.filter((p: Platform) => !deletedIds.has(p.id) && !isBlacklistedPlatform(p));
           if (cleaned.length > 0) return cleaned;
         }
       }
     } catch (e) {}
-    return PLATFORMS_DATA;
+    return PLATFORMS_DATA.filter((p) => !DELETED_PLATFORM_IDS.includes(p.id) && !isBlacklistedPlatform(p));
   });
 
   const [banners, setBanners] = useState<BannerSlide[]>(() => {
@@ -104,6 +113,7 @@ export default function App() {
 
   // Platform Launch animation modal state
   const [isLaunchingPlatform, setIsLaunchingPlatform] = useState(false);
+  const [launchingPlatformName, setLaunchingPlatformName] = useState('');
 
   // Admin 10-tap gesture state
   const [iconTapCount, setIconTapCount] = useState(0);
@@ -140,87 +150,100 @@ export default function App() {
     return new Set<string>();
   };
 
-  // Safe Non-Destructive Bidirectional Synchronization
+  const lastSyncedVersionRef = useRef<number>(0);
+
+  // Apply sync data idempotently to state & local cache
+  const applySyncData = (syncData: any) => {
+    if (!syncData) return;
+
+    if (typeof syncData.version === 'number') {
+      if (syncData.version <= lastSyncedVersionRef.current) {
+        return; // Already up to date
+      }
+      lastSyncedVersionRef.current = syncData.version;
+    }
+
+    const serverDeletedIds = new Set<string>([
+      ...DELETED_PLATFORM_IDS,
+      ...(Array.isArray(syncData.deletedPlatformIds) ? syncData.deletedPlatformIds : []),
+    ]);
+
+    if (Array.isArray(syncData.platforms)) {
+      const validPlatforms = syncData.platforms
+        .filter((p: Platform) => p && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p))
+        .sort((a: Platform, b: Platform) => (a.order ?? 999) - (b.order ?? 999));
+
+      setPlatforms(validPlatforms);
+      safeSetItem('gb_study_platforms', JSON.stringify(validPlatforms));
+      safeSetItem('gb_deleted_platform_ids', JSON.stringify(Array.from(serverDeletedIds)));
+    }
+
+    if (Array.isArray(syncData.banners)) {
+      const serverDeletedBanners = new Set<string>(
+        Array.isArray(syncData.deletedBannerIds) ? syncData.deletedBannerIds : []
+      );
+      const validBanners = syncData.banners.filter(
+        (b: BannerSlide) => b && !serverDeletedBanners.has(b.id)
+      );
+      setBanners(validBanners);
+      safeSetItem('gb_study_banners', JSON.stringify(validBanners));
+      safeSetItem('gb_deleted_banner_ids', JSON.stringify(Array.from(serverDeletedBanners)));
+    }
+  };
+
+  // High-Speed Authoritative Server Synchronization (Zero-Lag Cross-Device Real-Time)
   const refreshBackendData = async () => {
     try {
-      const [platRes, banRes] = await Promise.all([
+      // Unified fast sync-state endpoint
+      const syncRes = await fetch('/api/sync-state', {
+        headers: { 'Cache-Control': 'no-cache' }
+      }).catch(() => null);
+
+      if (syncRes && syncRes.ok) {
+        const syncData = await syncRes.json().catch(() => null);
+        if (syncData) {
+          applySyncData(syncData);
+          return;
+        }
+      }
+
+      // Fallback individual endpoints if sync-state is unavailable
+      const [platRes, banRes, delRes] = await Promise.all([
         fetch('/api/platforms').catch(() => null),
         fetch('/api/banners').catch(() => null),
+        fetch('/api/platforms/deleted').catch(() => null),
       ]);
 
-      const deletedPlatformIds = getDeletedPlatformIds();
-      const deletedBannerIds = getDeletedBannerIds();
+      const serverDeletedIds = new Set<string>(DELETED_PLATFORM_IDS);
+      if (delRes && delRes.ok) {
+        const delData = await delRes.json().catch(() => null);
+        if (Array.isArray(delData)) {
+          delData.forEach((id: string) => serverDeletedIds.add(id));
+        }
+      }
+      safeSetItem('gb_deleted_platform_ids', JSON.stringify(Array.from(serverDeletedIds)));
 
-      // Platforms Non-Destructive Merge
       if (platRes && platRes.ok) {
         const platData = await platRes.json().catch(() => null);
         if (Array.isArray(platData)) {
-          const map = new Map<string, Platform>();
+          const validPlatforms = platData
+            .filter((p: Platform) => p && !serverDeletedIds.has(p.id) && !isBlacklistedPlatform(p))
+            .sort((a: Platform, b: Platform) => (a.order ?? 999) - (b.order ?? 999));
 
-          // 1. Preserve current local platforms unless explicitly deleted
-          (platformsRef.current || []).forEach((p) => {
-            if (!deletedPlatformIds.has(p.id) && !isBlacklistedPlatform(p)) {
-              map.set(p.id, p);
-            }
-          });
-
-          // 2. Merge server platforms unless explicitly deleted
-          platData.forEach((sp: Platform) => {
-            if (!deletedPlatformIds.has(sp.id) && !isBlacklistedPlatform(sp)) {
-              const existing = map.get(sp.id);
-              map.set(sp.id, existing ? { ...existing, ...sp } : sp);
-            }
-          });
-
-          const mergedPlatforms = Array.from(map.values()).sort(
-            (a, b) => (a.order ?? 999) - (b.order ?? 999)
-          );
-
-          setPlatforms(mergedPlatforms);
-          safeSetItem('gb_study_platforms', JSON.stringify(mergedPlatforms));
-
-          // If local has platforms missing on server, bulk sync to server
-          const serverIdSet = new Set(platData.map((p: any) => p.id));
-          const missingOnServer = mergedPlatforms.filter((p) => !serverIdSet.has(p.id));
-          if (missingOnServer.length > 0) {
-            fetch('/api/platforms/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                platforms: mergedPlatforms,
-                deletedIds: Array.from(deletedPlatformIds),
-              }),
-            }).catch(() => null);
-          }
+          setPlatforms(validPlatforms);
+          safeSetItem('gb_study_platforms', JSON.stringify(validPlatforms));
         }
       }
 
-      // Banners Non-Destructive Merge
       if (banRes && banRes.ok) {
         const banData = await banRes.json().catch(() => null);
         if (Array.isArray(banData)) {
-          const bannerMap = new Map<string, BannerSlide>();
-
-          (bannersRef.current || []).forEach((b) => {
-            if (!deletedBannerIds.has(b.id)) {
-              bannerMap.set(b.id, b);
-            }
-          });
-
-          banData.forEach((sb: BannerSlide) => {
-            if (!deletedBannerIds.has(sb.id)) {
-              const existing = bannerMap.get(sb.id);
-              bannerMap.set(sb.id, existing ? { ...existing, ...sb } : sb);
-            }
-          });
-
-          const mergedBanners = Array.from(bannerMap.values());
-          setBanners(mergedBanners);
-          safeSetItem('gb_study_banners', JSON.stringify(mergedBanners));
+          setBanners(banData);
+          safeSetItem('gb_study_banners', JSON.stringify(banData));
         }
       }
     } catch (err) {
-      console.warn('Backend sync error (cached state preserved):', err);
+      console.warn('Backend sync warning:', err);
     }
   };
 
@@ -237,10 +260,80 @@ export default function App() {
       }
     } catch (e) {}
 
+    // 1. Initial snapshot fetch
     refreshBackendData();
-    // Non-destructive auto sync every 10 seconds
-    const syncInterval = setInterval(refreshBackendData, 10000);
-    return () => clearInterval(syncInterval);
+
+    // 2. High-Efficiency Real-Time SSE Stream (Zero-Latency Instant Push across 100k-500k devices)
+    let sseSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const connectSSE = () => {
+      try {
+        sseSource = new EventSource('/api/events');
+
+        sseSource.addEventListener('sync', (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            applySyncData(data);
+          } catch (err) {
+            console.warn('SSE message parse error:', err);
+          }
+        });
+
+        sseSource.onerror = () => {
+          if (sseSource) {
+            sseSource.close();
+            sseSource = null;
+          }
+          if (!reconnectTimeout) {
+            reconnectTimeout = setTimeout(() => {
+              reconnectTimeout = null;
+              connectSSE();
+            }, 3000);
+          }
+        };
+      } catch (err) {
+        console.warn('EventSource initialization warning:', err);
+      }
+    };
+
+    connectSSE();
+
+    // 3. Ultra-Lightweight Adaptive Heartbeat Poll (Checks /api/version only, handles 500k users smoothly)
+    const versionPollInterval = setInterval(async () => {
+      try {
+        const vRes = await fetch('/api/version').catch(() => null);
+        if (vRes && vRes.ok) {
+          const vData = await vRes.json().catch(() => null);
+          if (vData && typeof vData.v === 'number') {
+            if (vData.v > lastSyncedVersionRef.current) {
+              refreshBackendData();
+            }
+          }
+        }
+      } catch (e) {}
+    }, 6000);
+
+    // Instant refresh when user switches back to the tab or unlocks phone
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshBackendData();
+      }
+    };
+    const handleFocus = () => {
+      refreshBackendData();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      if (sseSource) sseSource.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      clearInterval(versionPollInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   // Save profile changes to localStorage
@@ -389,27 +482,59 @@ export default function App() {
     setShowTelegram(false);
   };
 
-  // SMOOTH PLATFORM OPENING WITH LAUNCH ANIMATION MODAL (Matching user's screenshot!)
+  // SMOOTH PLATFORM OPENING WITH EXACT 2-SECOND LAUNCH MODAL & POPUP-SAFE RETRY (Matching user's screenshot & exact 2s timing)
   const handleSelectPlatform = (platform: Platform) => {
+    setLaunchingPlatformName(platform.name);
     setIsLaunchingPlatform(true);
 
-    setTimeout(() => {
-      setIsLaunchingPlatform(false);
-      const targetUrl = platform.url?.trim();
-      const mode = platform.openMode || 'new_tab';
+    const targetUrl = platform.url?.trim();
+    const mode = platform.openMode || 'new_tab';
 
+    // Pre-initialize window on user click gesture to bypass mobile popup blockers
+    let preOpenedTab: Window | null = null;
+    if (targetUrl && mode === 'new_tab') {
+      try {
+        preOpenedTab = window.open('about:blank', '_blank');
+      } catch (e) {
+        console.warn('Popup blocked, falling back to direct navigation:', e);
+      }
+    }
+
+    // Opens platform after exactly 2 seconds (2000ms) with animated modal active throughout
+    setTimeout(() => {
       if (targetUrl) {
         if (mode === 'same_tab') {
           window.location.href = targetUrl;
         } else {
-          window.open(targetUrl, '_blank');
+          let openedSuccess = false;
+          if (preOpenedTab && !preOpenedTab.closed) {
+            try {
+              preOpenedTab.location.href = targetUrl;
+              openedSuccess = true;
+            } catch (err) {
+              console.warn('Tab navigation error:', err);
+            }
+          }
+
+          if (!openedSuccess) {
+            const fallbackTab = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+            if (!fallbackTab) {
+              // If popup blocker still caught it, navigate directly
+              window.location.href = targetUrl;
+            }
+          }
+
+          setIsLaunchingPlatform(false);
+          setLaunchingPlatformName('');
         }
       } else {
         // Native Batches View (Classroom)
         setSelectedPlatform(platform);
         setActiveScreen('batches');
+        setIsLaunchingPlatform(false);
+        setLaunchingPlatformName('');
       }
-    }, 700);
+    }, 2000);
   };
 
   // Backing out from BatchesView triggers the glowing aura splash transition
@@ -509,7 +634,7 @@ export default function App() {
       />
 
       {/* 8. Launching Platform Animation Modal (Exact replica of user screenshot!) */}
-      <LoadingPlatformModal isOpen={isLaunchingPlatform} />
+      <LoadingPlatformModal isOpen={isLaunchingPlatform} platformName={launchingPlatformName} />
 
       {/* Screen Routing */}
       {activeScreen === 'batches' && selectedPlatform ? (

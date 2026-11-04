@@ -77,6 +77,25 @@ app.post('/api/admin/verify', (req: Request, res: Response) => {
   return res.status(401).json({ success: false, message: 'Incorrect Password' });
 });
 
+app.get('/api/sync-state', (_req: Request, res: Response) => {
+  const sorted = [...(memoryDb.platforms || [])].sort((a: any, b: any) => {
+    const orderA = typeof a.order === 'number' ? a.order : 999;
+    const orderB = typeof b.order === 'number' ? b.order : 999;
+    return orderA - orderB;
+  });
+  res.json({
+    platforms: sorted,
+    banners: memoryDb.banners || [],
+    deletedPlatformIds: memoryDb.deletedPlatformIds || [],
+    deletedBannerIds: memoryDb.deletedBannerIds || [],
+    timestamp: Date.now(),
+  });
+});
+
+app.get('/api/platforms/deleted', (_req: Request, res: Response) => {
+  res.json(memoryDb.deletedPlatformIds || []);
+});
+
 app.get('/api/platforms', (_req: Request, res: Response) => {
   const sorted = [...(memoryDb.platforms || [])].sort((a: any, b: any) => {
     const orderA = typeof a.order === 'number' ? a.order : 999;
@@ -116,7 +135,7 @@ app.post('/api/platforms/sync', (req: Request, res: Response) => {
     const orderB = typeof b.order === 'number' ? b.order : 999;
     return orderA - orderB;
   });
-  res.json({ success: true, platforms: sorted });
+  res.json({ success: true, platforms: sorted, deletedPlatformIds: memoryDb.deletedPlatformIds });
 });
 
 app.post('/api/platforms', (req: Request, res: Response) => {
@@ -198,7 +217,7 @@ app.delete('/api/platforms/:id', (req: Request, res: Response) => {
   memoryDb.deletedPlatformIds = Array.from(new Set([...(memoryDb.deletedPlatformIds || []), id]));
   memoryDb.platforms = (memoryDb.platforms || []).filter((p: any) => p.id !== id);
   writeDb(memoryDb);
-  res.json({ success: true, id, platforms: memoryDb.platforms });
+  res.json({ success: true, id, platforms: memoryDb.platforms, deletedPlatformIds: memoryDb.deletedPlatformIds });
 });
 
 app.get('/api/banners', (_req: Request, res: Response) => {
